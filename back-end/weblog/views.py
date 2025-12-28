@@ -15,7 +15,7 @@ from .serializers import PostSerializer
 from rest_framework import generics , viewsets
 
 
-
+#region views
 
 def post_list(request,tag_slug=None):
 
@@ -100,7 +100,7 @@ def post_comment (request, post_id):
                   {'post':post, 'form':form,'comment':comment})
  
 
-
+#endregion
 
 
 #region api 
@@ -113,16 +113,9 @@ def post_list_api(request):
     return Response(serializer.data)
 
 
-
-
-
-
 class PostListAPIView(generics.ListAPIView):
     queryset = Post.objects.all()
     serializer_class = PostSerializer
-
-
-
 
 
 class PostViewsetAPIView(viewsets.ModelViewSet):
