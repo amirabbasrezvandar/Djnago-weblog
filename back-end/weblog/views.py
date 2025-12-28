@@ -12,16 +12,9 @@ from django.db.models import Count
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .serializers import PostSerializer
-from rest_framework import generics
+from rest_framework import generics , viewsets
 
 
-
-
-@api_view(['GET'])
-def post_list(request):
-    posts = Post.objects.all()
-    serializer = PostSerializer(posts, many=True)
-    return Response(serializer.data)
 
 
 def post_list(request,tag_slug=None):
@@ -108,6 +101,33 @@ def post_comment (request, post_id):
  
 
 
+
+
+#region api 
+
+
+@api_view(['GET','POST'])
+def post_list_api(request):
+    posts = Post.objects.all()
+    serializer = PostSerializer(posts, many=True)
+    return Response(serializer.data)
+
+
+
+
+
+
 class PostListAPIView(generics.ListAPIView):
     queryset = Post.objects.all()
     serializer_class = PostSerializer
+
+
+
+
+
+class PostViewsetAPIView(viewsets.ModelViewSet):
+    queryset = Post.objects.order_by("id").all()
+    serializer_class = PostSerializer
+
+    
+#endregion
