@@ -1,70 +1,138 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 
+const API = "http://localhost:8000/weblog/viewset/";
 
+/* fetch all posts (handles pagination) */
+async function fetchAllPosts(url) {
+  let results = [];
+  let next = url;
 
+  while (next) {
+    const res = await fetch(next);
+    const data = await res.json();
+
+    if (Array.isArray(data)) return data;
+
+    results = results.concat(data.results);
+    next = data.next;
+  }
+  return results;
+}
 
 function PostDetail() {
-  const { id } = useParams();
+  const { id, year, month, day, slug } = useParams();
+
   const [post, setPost] = useState(null);
+  const [latestPosts, setLatestPosts] = useState([]);
   const [similarPosts, setSimilarPosts] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`http://localhost:8000/weblog/viewset/${id}/`)
-      .then(res => res.json())
-      .then(data => {
-        setPost(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [id]);
+    let mounted = true;
 
-  const fetchSimilarPosts = (tag) => {
-    fetch(`http://localhost:8000/weblog/viewset/?tag=${tag}`)
-      .then(res => res.json())
-      .then(data =>
-        setSimilarPosts(data.filter(p => p.id !== post.id))
-      );
-  };
+    (async () => {
+      try {
+        const posts = await fetchAllPosts(API);
 
-  if (loading) return <p>Loading...</p>;
-  if (!post) return <p>Post not found</p>;
+        let currentPost = null;
+
+        // 🔹 find current post
+        if (id) {
+          currentPost = posts.find(p => String(p.id) === id);
+        } else {
+          currentPost = posts.find(p => {
+            if (!p.created || !p.slug) return false;
+            const d = new Date(p.created);
+            return (
+              d.getFullYear() === Number(year) &&
+              d.getMonth() + 1 === Number(month) &&
+              d.getDate() === Number(day) &&
+              p.slug === slug
+            );
+          });
+        }
+
+        if (!currentPost) {
+          if (mounted) setLoading(false);
+          return;
+        }
+
+        /* 🔹 latest posts (same as Django) */
+        const latest = [...posts]
+          .sort((a, b) => new Date(b.created) - new Date(a.created))
+          .slice(0, 5);
+
+        /* 🔹 similar posts (shared tags) */
+        const currentTags = currentPost.tags || [];
+
+        const similar = posts
+          .filter(p => p.id !== currentPost.id)
+          .map(p => {
+            const sharedTags = (p.tags || []).filter(tag =>
+              currentTags.includes(tag)
+            );
+            return { ...p, sharedTags: sharedTags.length };
+          })
+          .filter(p => p.sharedTags > 0)
+          .sort((a, b) => b.sharedTags - a.sharedTags)
+          .slice(0, 5);
+
+        if (mounted) {
+          setPost(currentPost);
+          setLatestPosts(latest);
+          setSimilarPosts(similar);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+
+    return () => (mounted = false);
+  }, [id, year, month, day, slug]);
+
+  if (loading) return <div>Loading...</div>;
+  if (!post) return <div>Post not found</div>;
 
   return (
-    <div>
+    <div style={{ padding: 20, maxWidth: 900, margin: "auto" }}>
+      {/* MAIN POST */}
+      <h1>{post.title}</h1>
+      <p style={{ color: "#777" }}>{post.created}</p>
 
-<h1>{post.title}</h1>
+      <div dangerouslySetInnerHTML={{ __html: post.body }} />
 
-{post.author && (<p><b>Author:</b> {post.author}</p>)}
+      <hr />
 
-{post.created && (<p><b>Created:</b> {post.created}</p>)}
-
-{post.updated && (<p><b>Updated:</b> {post.updated}</p>)}
-
-<p>{post.body}</p>
-
-      {post.tags?.map((tag, index) => (
-        <span
-          key={index}
-          onClick={() => fetchSimilarPosts(tag)}
-          style={{ cursor: "pointer", marginRight: "8px" }}
-        >
-          #{tag}
-        </span>
-      ))}
-
+      {/* SIMILAR POSTS */}
       {similarPosts.length > 0 && (
-        <ul>
-          {similarPosts.map(sp => (
-            <li key={sp.id}>{sp.title}</li>
-            
-          ))}
-        </ul>
+        <>
+          <h3>Similar posts</h3>
+          <ul>
+            {similarPosts.map(p => (
+              <li key={p.id}>
+                <Link to={`/posts/${p.id}`}>{p.title}</Link>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
+
+      {/* LATEST POSTS */}
+      <h3>Latest posts</h3>
+      <ul>
+        {latestPosts.map(p => (
+          <li key={p.id}>
+            <Link to={`/posts/${p.id}`}>{p.title}</Link>
+          </li>
+        ))}
+      </ul>
+
+      <Link to="/">← Back to posts</Link>
     </div>
   );
-  
 }
 
 export default PostDetail;

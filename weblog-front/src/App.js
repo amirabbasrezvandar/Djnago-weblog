@@ -8,6 +8,7 @@ function App() {
       <Routes>
         <Route path="/" element={<PostList />} />
         <Route path="/posts/:id" element={<PostDetail />} />
+        <Route path="/weblog/:year/:month/:day/:slug" element={<PostDetail />} />
       </Routes>
     </Router>
   );
