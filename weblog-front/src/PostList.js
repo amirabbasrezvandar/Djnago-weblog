@@ -1,99 +1,88 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-/**
- * Fetches posts from the DRF viewset endpoint and handles both
- * non-paginated arrays and paginated responses with { results, next }.
- */
-async function fetchAllPosts(url) {
-  const all = [];
-  let nextUrl = url;
-
-  while (nextUrl) {
-    const res = await fetch(nextUrl);
-    if (!res.ok) throw new Error(`Failed to fetch ${nextUrl}: ${res.status}`);
-    const data = await res.json();
-
-    if (Array.isArray(data)) {
-      // not paginated
-      return data;
-    } else if (Array.isArray(data.results)) {
-      all.push(...data.results);
-      nextUrl = data.next; // DRF gives full absolute URL in .next (or null)
-    } else {
-      // unexpected format
-      throw new Error("Unexpected response format from API");
-    }
-  }
-
-  return all;
-}
+const API_BASE = "http://localhost:8000";
 
 function PostList() {
   const [posts, setPosts] = useState([]);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const API = "http://localhost:8000/weblog/viewset/";
 
   useEffect(() => {
-    let mounted = true;
-    (async () => {
+    async function load() {
+      setLoading(true);
       try {
-        const all = await fetchAllPosts(API);
-        if (mounted) {
-          setPosts(all);
+        const resPosts = await fetch(`${API_BASE}/weblog/viewset/posts/`);
+        const dataPosts = await resPosts.json();
+        const arr = Array.isArray(dataPosts) ? dataPosts : (dataPosts.results || []);
+        setPosts(arr);
+
+        const resStats = await fetch(`${API_BASE}/weblog/api/stats/`);
+        if (resStats.ok) {
+          const dataStats = await resStats.json();
+          setStats(dataStats);
         }
-      } catch (err) {
-        console.error("Error fetching posts:", err);
+      } catch (e) {
+        console.error(e);
       } finally {
-        if (mounted) setLoading(false);
+        setLoading(false);
       }
-    })();
-    return () => { mounted = false; };
+    }
+    load();
   }, []);
 
-  if (loading) return <div>Loading posts...</div>;
-  if (!posts || posts.length === 0) return <div>No posts found.</div>;
+  if (loading) return <div>Loading...</div>;
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Posts</h1>
-      <ul>
-        {posts.map(post => {
-          // Some serializers return created as ISO timestamp
-          const created = post.created ? new Date(post.created) : null;
-          const year = created ? created.getFullYear() : "YYYY";
-          const month = created ? String(created.getMonth() + 1) : "M";
-          const day = created ? String(created.getDate()) : "D";
-          const slug = post.slug || (post.title ? post.title.toLowerCase().replace(/\s+/g,'-') : 'post');
+    <div style={{ maxWidth: 1100, margin: "0 auto", padding: 20, display: "grid", gridTemplateColumns: "3fr 1fr", gap: 20 }}>
+      <main>
+        <h1>This is my weblog</h1>
+        <p>{stats ? `I've written ${stats.post_count} posts so far.` : '...'}</p>
 
-          return (
-            <li key={post.id} style={{ marginBottom: 18 }}>
-              {/* link to React detail by id */}
-              <div>
-                <Link to={`/posts/${post.id}`} style={{ fontSize: 18, fontWeight: 600 }}>
-                  {post.title}
-                </Link>
-              </div>
-              {/* show short excerpt */}
-              <div>
-                {post.body ? (post.body.slice(0, 140) + (post.body.length > 140 ? '…' : '')) : ''}
-              </div>
-              {/* Django-style permalink so you can open the exact path you mentioned */}
-              <div style={{ marginTop: 6 }}>
-                <Link to={`/weblog/${year}/${month}/${day}/${slug}`}>
-                  Open Django-style permalink: /weblog/{year}/{month}/{day}/{slug}/
-                </Link>
-              </div>
+        {posts.map(p => (
+          <article key={p.id} style={{ borderBottom: "1px solid #eee", paddingBottom: 12, marginBottom: 12 }}>
+            <h2><Link to={`/posts/${p.id}`}>{p.title}</Link></h2>
+            <p><small>{p.publish ? p.publish.slice(0,10) : ''} — {p.author || ''}</small></p>
 
-              <div style={{ marginTop: 6, color: "#666" }}>
-                tags: {Array.isArray(post.tags) ? post.tags.join(", ") : post.tags}
-                {" | "}
-                created: {post.created}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+            <div dangerouslySetInnerHTML={{ __html: p.excerpt || (p.body || "").slice(0,200) }} />
+
+            {/* TAGS: show tags if present. Handles array or string fallback. */}
+            <div style={{ marginTop: 8, color: "#555" }}>
+              <strong>Tags:</strong>{" "}
+              {Array.isArray(p.tags)
+                ? (p.tags.length ? p.tags.join(", ") : "-")
+                : (p.tags ? p.tags : "-")}
+            </div>
+
+            <p><Link to={`/posts/${p.id}`}>Read more →</Link></p>
+          </article>
+        ))}
+      </main>
+
+      <aside>
+        <div>
+          <h4>Subscribe</h4>
+          {stats && <p><a href={stats.rss_feed} target="_blank" rel="noreferrer">Subscribe to my RSS feed</a></p>}
+        </div>
+
+        <div style={{ marginTop: 20 }}>
+          <h4>Latest posts</h4>
+          {stats && stats.latest_posts ? (
+            <ul>
+              {stats.latest_posts.map(lp => <li key={lp.id}><Link to={`/posts/${lp.id}`}>{lp.title}</Link></li>)}
+            </ul>
+          ) : <p>Loading...</p>}
+        </div>
+
+        <div style={{ marginTop: 20 }}>
+          <h4>Most commented</h4>
+          {stats && stats.most_commented_posts ? (
+            <ul>
+              {stats.most_commented_posts.map(mp => <li key={mp.id}><Link to={`/posts/${mp.id}`}>{mp.title}</Link></li>)}
+            </ul>
+          ) : <p>Loading...</p>}
+        </div>
+      </aside>
     </div>
   );
 }

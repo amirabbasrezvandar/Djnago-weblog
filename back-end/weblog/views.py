@@ -9,10 +9,14 @@ from django.views.decorators.http import require_POST
 from taggit.models import Tag
 from django.db.models import Count
 
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view , action
 from rest_framework.response import Response
-from .serializers import PostSerializer
-from rest_framework import generics , viewsets
+from .serializers import PostSerializer , CommentSerializer
+from rest_framework import generics , viewsets , status
+
+from rest_framework.permissions import AllowAny
+
+
 
 
 #region views
@@ -123,4 +127,51 @@ class PostViewsetAPIView(viewsets.ModelViewSet):
     serializer_class = PostSerializer
 
     
+
+
+
+class CommentViewSet(viewsets.ModelViewSet):
+    queryset = Comment.objects.all().order_by('created')
+    serializer_class = CommentSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        post_id = self.request.query_params.get('post')
+        if post_id:
+            qs = qs.filter(post_id=post_id, active=True)
+        else:
+            qs = qs.filter(active=True)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        comment = serializer.save()
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+@api_view(['POST'])
+def post_share_api(request):
+    form = EmailPostForm(request.data)
+    if form.is_valid():
+        cd = form.cleaned_data
+        post_id = request.data.get('post_id') or cd.get('post_id')
+        try:
+            post = Post.objects.get(id=post_id, status=Post.Status.PUBLISHED)
+        except Post.DoesNotExist:
+            return Response({'sent': False, 'errors': 'post not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        post_url = request.build_absolute_uri(post.get_absolute_url())
+        subject = f"{cd['name']} recommends you read {post.title}"
+        message = f"Read {post.title} at {post_url}\n\n{cd.get('comments','')}"
+        try:
+            send_mail(subject, message, cd['email'], [cd['to']])
+            return Response({'sent': True})
+        except Exception as e:
+            return Response({'sent': False, 'errors': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    else:
+        return Response({'sent': False, 'errors': form.errors}, status=status.HTTP_400_BAD_REQUEST)
+
 #endregion
